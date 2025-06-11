@@ -8,6 +8,7 @@ import queue
 from threading import Thread
 import urllib3
 import re
+import platform
 
 urllib3.disable_warnings()
 
@@ -15,12 +16,13 @@ class GitHubCommitFinderGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("GitHub Commit Finder")
-        self.root.geometry("1000x700") 
         
         self.commit_queue = queue.Queue()
         self.result_queue = queue.Queue()
         self.running = False
         self.commits = []  
+        self.private_commits_found = 0 
+        self.public_commits = set()
         
        
         self.root.configure(bg="#2b2b2b")
@@ -34,77 +36,100 @@ class GitHubCommitFinderGUI:
         style.map("TButton", background=[("active", "#4a4a4a")])
         style.map("TRadiobutton", background=[("active", "#2b2b2b")])
         
+      
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        
+  
+        if platform.system() == "Windows":
+            self.root.wm_state("zoomed")
+        else:
+            try:
+                self.root.wm_attributes("-zoomed", True)
+            except tk.TclError:
+                screen_width = self.root.winfo_screenwidth()
+                screen_height = self.root.winfo_screenheight()
+                self.root.geometry(f"{screen_width}x{screen_height}")
+        
         self.create_widgets()
         
     def create_widgets(self):
-        
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         main_frame.configure(style="TFrame")
         
+        main_frame.grid_rowconfigure(8, weight=1)
+        main_frame.grid_columnconfigure(1, weight=1)
         
-        ttk.Label(main_frame, text="GitHub Token:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.token_entry = ttk.Entry(main_frame, width=60)
-        self.token_entry.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
         
-     
-        ttk.Label(main_frame, text="Target Type:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Label(main_frame, text="GitHub Token:").grid(row=0, column=0, sticky=tk.W, pady=2, padx=5)
+        self.token_entry = ttk.Entry(main_frame)
+        self.token_entry.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2, padx=5)
+        
+        
+        ttk.Label(main_frame, text="Target Type:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=5)
         self.target_type = tk.StringVar(value="repository")
         ttk.Radiobutton(main_frame, text="Repository", variable=self.target_type, 
-                       value="repository").grid(row=1, column=1, sticky=tk.W)
+                       value="repository").grid(row=1, column=1, sticky=tk.W, padx=5)
         ttk.Radiobutton(main_frame, text="Organization", variable=self.target_type, 
-                       value="organization").grid(row=1, column=2, sticky=tk.W)
+                       value="organization").grid(row=1, column=2, sticky=tk.W, padx=5)
         
-       
-        ttk.Label(main_frame, text="Target URL/Name:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.target_entry = ttk.Entry(main_frame, width=60)
-        self.target_entry.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+    
+        ttk.Label(main_frame, text="Target URL/Name:").grid(row=2, column=0, sticky=tk.W, pady=2, padx=5)
+        self.target_entry = ttk.Entry(main_frame)
+        self.target_entry.grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2, padx=5)
         
      
-        ttk.Label(main_frame, text="Organization List File:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.file_entry = ttk.Entry(main_frame, width=50)
-        self.file_entry.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=2)
-        ttk.Button(main_frame, text="Browse", command=self.browse_file).grid(row=3, column=2, sticky=tk.W)
+        ttk.Label(main_frame, text="Organization List File:").grid(row=3, column=0, sticky=tk.W, pady=2, padx=5)
+        self.file_entry = ttk.Entry(main_frame)
+        self.file_entry.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=2, padx=5)
+        ttk.Button(main_frame, text="Browse", command=self.browse_file).grid(row=3, column=2, sticky=tk.W, padx=5)
         
-  
-        ttk.Label(main_frame, text="Thread Count:").grid(row=4, column=0, sticky=tk.W, pady=2)
+    
+        ttk.Label(main_frame, text="Thread Count:").grid(row=4, column=0, sticky=tk.W, pady=2, padx=5)
         self.thread_count = tk.StringVar(value="2")
-        ttk.Entry(main_frame, textvariable=self.thread_count, width=10).grid(row=4, column=1, sticky=tk.W)
+        ttk.Entry(main_frame, textvariable=self.thread_count, width=10).grid(row=4, column=1, sticky=tk.W, padx=5)
         
-        ttk.Label(main_frame, text="Batch Size:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        ttk.Label(main_frame, text="Batch Size:").grid(row=5, column=0, sticky=tk.W, pady=2, padx=5)
         self.batch_size = tk.StringVar(value="300")
-        ttk.Entry(main_frame, textvariable=self.batch_size, width=10).grid(row=5, column=1, sticky=tk.W)
+        ttk.Entry(main_frame, textvariable=self.batch_size, width=10).grid(row=5, column=1, sticky=tk.W, padx=5)
         
-        ttk.Label(main_frame, text="Proxy (http://host:port):").grid(row=6, column=0, sticky=tk.W, pady=2)
-        self.proxy_entry = ttk.Entry(main_frame, width=60)
-        self.proxy_entry.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        ttk.Label(main_frame, text="Max Private Commits:").grid(row=6, column=0, sticky=tk.W, pady=2, padx=5)
+        self.max_private_commits = tk.StringVar(value="10")
+        ttk.Entry(main_frame, textvariable=self.max_private_commits, width=10).grid(row=6, column=1, sticky=tk.W, padx=5)
         
-  
-        ttk.Label(main_frame, text="Output:").grid(row=7, column=0, sticky=tk.W, pady=2)
-        self.output_text = tk.Text(main_frame, height=15, width=100, bg="3c3c3c", fg="ffffff", 
-                                 insertbackground="ffffff", state="disabled")
-        self.output_text.grid(row=8, column=0, columnspan=3, pady=2)
+        ttk.Label(main_frame, text="Proxy (http://host:port):").grid(row=7, column=0, sticky=tk.W, pady=2, padx=5)
+        self.proxy_entry = ttk.Entry(main_frame)
+        self.proxy_entry.grid(row=7, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2, padx=5)
+        
+ 
+        ttk.Label(main_frame, text="Output:").grid(row=8, column=0, sticky=tk.W, pady=2, padx=5)
+        self.output_text = tk.Text(main_frame, height=15, bg="#3c3c3c", fg="#ffffff", 
+                                 insertbackground="#ffffff", state="disabled")
+        self.output_text.grid(row=9, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=2, padx=5)
         scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=self.output_text.yview)
-        scrollbar.grid(row=8, column=3, sticky=(tk.N, tk.S))
+        scrollbar.grid(row=9, column=3, sticky=(tk.N, tk.S), padx=5)
         self.output_text['yscrollcommand'] = scrollbar.set
         
-
-        self.output_text.tag_configure("info", foreground="ffffff")
-        self.output_text.tag_configure("success", foreground="00ff00")
-        self.output_text.tag_configure("error", foreground="ff4040")
-        self.output_text.tag_configure("warning", foreground="ffa500")
-        self.output_text.tag_configure("complete", foreground="40c4ff", font=("Helvetica", 10, "bold"))
+       
+        self.output_text.tag_configure("info", foreground="#ffffff")
+        self.output_text.tag_configure("success", foreground="#00ff00")
+        self.output_text.tag_configure("error", foreground="#ff4040")
+        self.output_text.tag_configure("warning", foreground="#ffa500")
+        self.output_text.tag_configure("complete", foreground="#40c4ff", font=("Helvetica", 10, "bold"))
         
-   
-        ttk.Button(main_frame, text="Start", command=self.start_scan).grid(row=9, column=0, pady=10)
-        ttk.Button(main_frame, text="Stop", command=self.stop_scan).grid(row=9, column=1, pady=10)
-        ttk.Button(main_frame, text="Clear Output", command=self.clear_output).grid(row=9, column=2, pady=10)
-        ttk.Button(main_frame, text="Export Commits", command=self.export_commits).grid(row=9, column=3, pady=10)
+ 
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=10, column=0, columnspan=4, pady=10, sticky=tk.E)
+        ttk.Button(button_frame, text="Start", command=self.start_scan).grid(row=0, column=0, padx=5)
+        ttk.Button(button_frame, text="Stop", command=self.stop_scan).grid(row=0, column=1, padx=5)
+        ttk.Button(button_frame, text="Clear Output", command=self.clear_output).grid(row=0, column=2, padx=5)
+        ttk.Button(button_frame, text="Export Commits", command=self.export_commits).grid(row=0, column=3, padx=5)
     
     def log(self, message, tag="info"):
         self.output_text.configure(state="normal")
         self.output_text.insert(tk.END, message + "\n", tag)
-        if tag == "success" and message.startswith("Found commit:"):
+        if tag == "success" and message.startswith("https"):
             self.commits.append(message)
         self.output_text.configure(state="disabled")
         self.output_text.see(tk.END)
@@ -161,6 +186,14 @@ class GitHubCommitFinderGUI:
                 raise ValueError
         except ValueError:
             messagebox.showerror("Error", "Batch size must be a positive integer")
+            return False
+            
+        try:
+            max_private = int(self.max_private_commits.get())
+            if max_private < 1:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Max private commits must be a positive integer")
             return False
             
         return True
@@ -225,41 +258,54 @@ class GitHubCommitFinderGUI:
         return self.query_commit_oids(short_sha_list, repository_name, repository_owner, retry_delay + 2)
     
     def fetch_public_commits(self, repository_name, repository_owner):
-        known_commits = set()
+        self.public_commits.clear()
         self.log("Retrieving public commit history")
         headers = {"Authorization": f"Bearer {self.token_entry.get()}"}
         proxies = {"http": self.proxy_entry.get(), "https": self.proxy_entry.get()} if self.proxy_entry.get() else {}
         url = f'https://api.github.com/repos/{repository_owner}/{repository_name}/commits?per_page=100'
         
         while url and self.running:
-            response = requests.get(url, headers=headers, proxies=proxies, verify=False)
-            commit_data = response.json()
-            for commit in commit_data:
-                known_commits.add(commit["sha"])
-            
-            if 'link' in response.headers and "next" in response.headers['link']:
-                next_link = [link for link in response.headers['link'].split(', ') if 'rel="next"' in link]
-                if next_link:
-                    url = next_link[0].split(';')[0].strip('<>')
+            try:
+                response = requests.get(url, headers=headers, proxies=proxies, verify=False)
+                commit_data = response.json()
+                for commit in commit_data:
+                    self.public_commits.add(commit["sha"])
+                
+                if 'link' in response.headers and "next" in response.headers['link']:
+                    next_link = [link for link in response.headers['link'].split(', ') if 'rel="next"' in link]
+                    url = next_link[0].split(';')[0].strip('<>') if next_link else None
                 else:
                     url = None
-            else:
-                url = None
+            except Exception as e:
+                self.log(f"Error fetching public commits: {e}", "error")
+                return self.public_commits
         
-        self.log(f"Found {len(known_commits)} public commits", "success")
-        return known_commits
+        self.log(f"Found {len(self.public_commits)} public commits", "success")
+        return self.public_commits
     
     def graphql_query_worker(self, repository_name, repository_owner):
-        while self.running:
+        max_private = int(self.max_private_commits.get())
+        while self.running and self.private_commits_found < max_private:
             try:
                 batch = self.commit_queue.get_nowait()
                 valid_commits = self.query_commit_oids(batch, repository_name, repository_owner)
                 for commit_id in valid_commits:
+                    if not self.running or self.private_commits_found >= max_private:
+                        break
                     self.result_queue.put(commit_id)
-                    self.log(f"Found commit: https://github.com/{repository_owner}/{repository_name}/commit/{commit_id}", "success")
+                    if commit_id not in self.public_commits:
+                        self.private_commits_found += 1
+                        self.log(f"Found private commit: https://github.com/{repository_owner}/{repository_name}/commit/{commit_id}", "success")
+                    else:
+                        self.log(f"Found commit: https://github.com/{repository_owner}/{repository_name}/commit/{commit_id}", "success")
+                    
+                    if self.private_commits_found >= max_private:
+                        self.log(f"Reached maximum private commits ({max_private}), stopping scan", "complete")
+                        self.stop_scan()
+                        break
                 self.commit_queue.task_done()
             except queue.Empty:
-                return
+                break
     
     def download_commit_diff(self, repository_name, repository_owner, commit_id):
         try:
@@ -325,15 +371,16 @@ class GitHubCommitFinderGUI:
                     time.sleep(retry_delay)
                     retry_delay += 2
             except queue.Empty:
-                return
+                break
     
     def populate_commit_queue(self, known_commits):
         hex_chars = "0123456789abcdef"
         current_batch = []
         batch_size = int(self.batch_size.get())
+        max_private = int(self.max_private_commits.get())
         
         for short_sha in product(hex_chars, repeat=4):
-            if not self.running:
+            if not self.running or self.private_commits_found >= max_private:
                 break
             short_sha_str = ''.join(short_sha)
             collision_detected = False
@@ -354,7 +401,7 @@ class GitHubCommitFinderGUI:
                 self.commit_queue.put(current_batch)
                 current_batch = []
         
-        if current_batch and self.running:
+        if current_batch and self.running and self.private_commits_found < max_private:
             self.commit_queue.put(current_batch)
     
     def create_output_directory(self, repository_owner, repository_name):
@@ -431,7 +478,8 @@ class GitHubCommitFinderGUI:
             return
             
         self.running = True
-        self.commits.clear() 
+        self.private_commits_found = 0
+        self.commits.clear()
         self.output_text.configure(state="normal")
         self.output_text.delete(1.0, tk.END)
         self.output_text.configure(state="disabled")
@@ -473,19 +521,33 @@ class GitHubCommitFinderGUI:
             finally:
                 self.running = False
                 if not self.running:
-                    self.log("Scan stopped by user", "warning")
+                    self.log("Scan stopped by user or completed", "warning")
         
         Thread(target=scan_thread, daemon=True).start()
     
     def stop_scan(self):
         self.running = False
         self.log("Stopping scan...", "warning")
+        
+        while not self.commit_queue.empty():
+            try:
+                self.commit_queue.get_nowait()
+                self.commit_queue.task_done()
+            except queue.Empty:
+                break
+        while not self.result_queue.empty():
+            try:
+                self.result_queue.get_nowait()
+                self.result_queue.task_done()
+            except queue.Empty:
+                break
     
     def clear_output(self):
         self.output_text.configure(state="normal")
         self.output_text.delete(1.0, tk.END)
         self.output_text.configure(state="disabled")
         self.commits.clear()
+        self.private_commits_found = 0
 
 if __name__ == "__main__":
     root = tk.Tk()
