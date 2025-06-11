@@ -129,7 +129,7 @@ class GitHubCommitFinderGUI:
     def log(self, message, tag="info"):
         self.output_text.configure(state="normal")
         self.output_text.insert(tk.END, message + "\n", tag)
-        if tag == "success" and message.startswith("https"):
+        if tag == "success" and message.startswith("Found commit:"):
             self.commits.append(message)
         self.output_text.configure(state="disabled")
         self.output_text.see(tk.END)
